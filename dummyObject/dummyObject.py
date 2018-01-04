@@ -1,24 +1,32 @@
 #!/usr/bin/env python3
-# File : dummyObject.py
-# Description : Publish some system metrics, answer to requests and change its configuration parameters on-demand.
-
-# Dependencies :
+#
+# File: dummyObject.py
+#
+# Description: Top level dummy object. It is not implementable as is (like abstract classes in java)
+# so it should have children classes.
+#
+# Features: manage basic behaviour such as answers to requests from MQTT messages,
+# configuration parameters read / write, and write operations in MongoDB.
+#
+# Dependencies:
 # 	- paho-mqtt (sudo pip3 install paho-mqtt)
-# 	- psutil (sudo pip3 install psutil)
 #   - pymongo (sudo pip3 install pymongo)
+#
+####################################################################################################
 
 import json
 import sys
-from time import sleep
 from datetime import datetime
+from time import sleep
+from abc import ABCMeta, abstractmethod
 
-import psutil
 from paho.mqtt.client import Client
 from pymongo import MongoClient
 
 
 class DummyObject:
     """ simulate an object with its configuration and sensors """
+    __metaclass__ = ABCMeta
 
     def __init__(self, building, floor, room, object_type, object_name, mongodb_host, mongodb_port, broker_url):
         """ initialize the object """
@@ -92,27 +100,12 @@ class DummyObject:
                     },
                 }
             },
-            "metrics": {
-                "label": "Metrics",
-                "description": "The set of metrics that the object can collect",
+            "fields": {
+                "label": "Fields",
+                "description": "A set of fields such as metrics that the object can collect,"
+                               "or a status, etc.",
                 "type": "JSON",
-                "values": {
-                    "disk_usage": {
-                        "label": "Disk usage",
-                        "description": "The disk usage in percent",
-                        "type": "Float",
-                    },
-                    "memory_usage": {
-                        "label": "Memory usage",
-                        "description": "The RAM usage in percent",
-                        "type": "Float",
-                    },
-                    "cpu_usage": {
-                        "label": "CPU usage",
-                        "description": "The CPU usage in percent",
-                        "type": "Float",
-                    }
-                }
+                "values": {}
             },
             "creation_date": {
                 "label": "Creation date",
@@ -127,12 +120,27 @@ class DummyObject:
                 "value": str(datetime.utcnow())
             }
         }
+
+        # Container for the values of the fields (either functions or static values)
+        # Should be filled by the "add_field" function called in the children classes
+        self.fields = {}
+
+        # Base parameters such as the location and the type of the object
+        self.base_parameters = {
+            "building": self.description["building"]["value"],
+            "floor": self.description["floor"]["value"],
+            "room": self.description["room"]["value"],
+            "object_type": self.description["object_type"]["value"],
+            "object_name": self.description["object_name"]["value"]
+        }
+
+        # Base topic for the MQTT messages
+        self.base_topic = "/".join(self.base_parameters.values())
+
+        print("")
         print("### Object information ###")
         print("(Should be sent to MongoDB)")
         print(json.dumps(self.description, indent=2))
-        self.base_parameters = [self.description[item]["value"]
-                               for item in ["building", "room", "floor", "object_type", "object_name"]]
-        self.base_topic = "/".join(self.base_parameters)
 
         # Persist the object description in MongoDB
         print("Connecting to MongoDB.")
@@ -148,6 +156,13 @@ class DummyObject:
         # Initialize the MQTT client
         self.init_mqtt_client(broker_url)
 
+    @abstractmethod
+    def custom_mqtt_reaction(self, topic, message):
+        """ Any reaction to a MQTT message other than configuration change or request.
+         This behaviour depends on the object and thus should be defined in children classes.
+         """
+        raise NotImplementedError("Must override method custom_mqtt_reaction")
+
     def init_mqtt_client(self, host):
         """ initialize the MQTT client with the topics to subscribe to
         and the function to manage the received messages
@@ -157,45 +172,54 @@ class DummyObject:
         self.mqtt_client.connect(host)
 
         def on_message(client, userdata, msg):
+            """ callback function to process mqtt messages """
+            message_type = msg.topic.split("/")[-1]
             message = str(msg.payload.decode("utf-8"))
             print("received message on topic " + msg.topic + ": " + message)
 
-            message_type = msg.topic.split("/")[-1]
+            # The message should contain 3 things:
+            # either parameter, new_value, client_id
+            # or <field/config>, field_name, client_id
+            if len(message.split(",")) != 3:
+                print("Bad message structure")
+                return 0
+
+            self.custom_mqtt_reaction(msg.topic, message)
 
             if message_type == "config":
-                key, value = message.split("=")
-                if key in self.get_parameters_list():
-                    self.set_parameter(key, value)
+                parameter_name, new_value, client_id = message.split(",")
+                if parameter_name in self.get_parameters_list():
+                    self.set_parameter_value(parameter_name, new_value)
 
             elif message_type == "request":
                     request_type, parameter, client_id = message.split(",")
 
                     # Fake latency
-                    sleep(float(self.get_parameter("response_latency")) / 1000)
+                    sleep(float(self.get_parameter_value("response_latency")) / 1000)
 
                     # ask for a configuration parameter
                     if request_type == "config":
                         print("request for a configuration parameter")
                         if parameter in self.get_parameters_list():
                             self.mqtt_client.publish(self.base_topic + "/answer/" + client_id,
-                                                     self.get_parameter(parameter))
+                                                     self.get_parameter_value(parameter))
                         else:
                             self.mqtt_client.publish(self.base_topic + "/answer/" + client_id,
-                                                "no such parameter")
+                                                     "no such parameter")
 
-                    # ask for a measure
-                    elif request_type == "measure":
-                        print("request for metrics")
-                        if parameter in self.get_metrics_list():
+                    # ask for a field
+                    elif request_type == "field":
+                        print("request for a field")
+                        if parameter in self.get_fields_list():
                             client.publish(self.base_topic + "/answer/" + client_id,
-                                           self.get_metrics(parameter))
+                                           self.get_field_value(parameter))
                         else:
                             self.mqtt_client.publish(self.base_topic + "/answer/" + client_id,
-                                                "no such metrics")
+                                                     "no such field")
 
         self.mqtt_client.on_message = on_message  # bind function to callback
 
-        building, room, floor, type, name = self.base_parameters
+        building, floor, room, type, name = self.base_parameters.values()
 
         topics = [
             building + "/" + floor + "/" + room + "/" + type + "/" + name + "/+",
@@ -205,6 +229,7 @@ class DummyObject:
             building + "/" + floor + "/All/All/All/+",
             building + "/All/All/" + type + "/All/+",
             building + "/All/All/All/All/+",
+            "All/All/All/All/All/+"
         ]
         for topic in topics:
             print("Subscribing to the topic " + topic)
@@ -216,73 +241,87 @@ class DummyObject:
         """ return the list of the configuration parameters """
         return self.description["config"]["values"].keys()
 
-    def get_parameter(self, parameter):
+    def get_parameter_value(self, parameter_name):
         """ return the current value of a configuration parameter """
-        return self.description["config"]["values"][parameter]["value"]
+        if parameter_name in self.description["config"]["values"].keys():
+            return self.description["config"]["values"][parameter_name]["value"]
+        else:
+            return "No such parameter"
 
-    def set_parameter(self, parameter, new_value):
+    def set_parameter_value(self, parameter_name, new_value):
         """ change the value of a configuration parameter """
-        self.description["config"]["values"][parameter]["value"] = new_value
+        self.description["config"]["values"][parameter_name]["value"] = new_value
         self.mongo_client.cps2_project.objects.update_one(
             {"_id": self.mongo_id},
-            {"$set": {"config.values." + parameter + ".value": new_value,
+            {"$set": {"config.values." + parameter_name + ".value": new_value,
                       "last_modified.value": str(datetime.utcnow())}
-             }
+            }
         )
-        print("Switched the parameter " + parameter + " to " + new_value + " and updated MongoDB.")
+        print("Switched the parameter " + parameter_name + " to " + new_value + " and updated MongoDB.")
 
-    def get_metrics_list(self):
-        """ return the list of the available metrics """
-        return self.description["metrics"]["values"].keys()
+    def get_fields_list(self):
+        """ return the list of the available fields """
+        return self.description["fields"]["values"].keys()
 
-    @staticmethod
-    def get_metrics(name):
-        """ return the current value of metrics """
-        if name in ["disk_usage", "memory_usage", "cpu_usage"]:
-            return {
-                "disk_usage": psutil.disk_usage('/').percent,
-                "memory_usage": psutil.virtual_memory().percent,
-                "cpu_usage": psutil.cpu_percent(interval=None)
-            }[name]
+    def get_field_value(self, field_name):
+        """ return the current value of a field. """
+        if field_name in self.fields.keys():
+            # the value of the field is given either by a function or the system
+            if self.description["fields"]["values"][field_name]["source"] == "function":
+                return self.fields[field_name]()
+            elif self.description["fields"]["values"][field_name]["source"] == "system":
+                return self.fields[field_name]
         else:
-            return "No function defined for this parameter"
+            return "No such field"
 
-    def add_metrics_field(self, name, label, description, type):
-        """ add a metrics field in the description of the object """
+    def set_field_value(self, field_name, new_value):
+        """ change the value of a field """
+        self.fields[field_name] = new_value
+
+    def add_field(self, field_name, label, description, type, function=None):
+        """ add a field in the description of the object.
+         The value of the field is either given by a function, or updated by the system. """
         new_field = {
             "label": label,
             "description": description,
-            "type": type
+            "type": type,
         }
-        self.description["metrics"]["values"][name] = new_field
+        if function is not None:
+            new_field["source"] = "function"
+            self.fields[field_name] = function
+        else:
+            new_field["source"] = "system"
+            self.fields[field_name] = "No value"
+        self.description["fields"]["values"][field_name] = new_field
 
         # update MongoDB
         self.mongo_client.cps2_project.objects.update_one(
             {"_id": self.mongo_id},
-            {"$set": {"metrics.values." + name: new_field,
+            {"$set": {"fields.values." + field_name: new_field,
                       "last_modified.value": str(datetime.utcnow())}
              }
         )
-        print("Added a new metrics field called \"" + name + "\" and updated MongoDB.")
+        print("Added a new field called \"" + field_name + "\" and updated MongoDB.")
 
     def loop_forever(self):
+        """ Publish and process MQTT messages forever """
         while True:
-            if self.get_parameter("publishing_mode") == "continuous":
-                self.mqtt_client.publish(self.base_topic + "/disk_usage", self.get_metrics("disk_usage"))
-                self.mqtt_client.publish(self.base_topic + "/memory_usage", self.get_metrics("memory_usage"))
-                self.mqtt_client.publish(self.base_topic + "/cpu_usage", self.get_metrics("cpu_usage"))
-                sleep(float(self.get_parameter("publishing_period")) / 1000)
+            if self.get_parameter_value("publishing_mode") == "continuous":
+                for field_name in self.get_fields_list():
+                    self.mqtt_client.publish(self.base_topic + "/metrics/" + field_name,
+                                             self.get_field_value(field_name))
+                sleep(float(self.get_parameter_value("publishing_period")) / 1000)
 
 
 if __name__ == '__main__':
     if len(sys.argv) == 9:
-        building, ground_level, room, object_type, object_name, mongo_host, mongo_port, broker_url = sys.argv[1:]
+        building, floor, room, object_type, object_name, mongo_host, mongo_port, broker_url = sys.argv[1:]
         mongo_port = int(mongo_port)
 
     elif len(sys.argv) == 1:
         print("Creating example object with values : ")
         print("Building: EF")
-        print("Ground level: 1")
+        print("Floor: 1")
         print("Room: 1.32")
         print("Object type: Dummy Object")
         print("Object name: obj01")
@@ -290,7 +329,7 @@ if __name__ == '__main__':
         print("MongoDB port: 27017")
         print("Broker url: localhost")
         building = "EF"
-        ground_level = "1"
+        floor = "1"
         room = "1.32"
         object_type = "Dummy Object"
         object_name = "obj01"
@@ -299,31 +338,31 @@ if __name__ == '__main__':
         broker_url = "localhost"
 
     else:
-        print("Usage: " + __file__ + " <building> <groundLevel> <room> <objectType> <objectName> "
-                                     "<mongoHost> <mongoPort> <broker_url>")
+        print("Usage: " + __file__ + " <building> <floor> <room> <object_type> <object_name> "
+                                     "<mongo_host> <mongo_port> <broker_url>")
 
     ### Create the object
-    dummy_object = DummyObject(building, ground_level, room, object_type, object_name, mongo_host, mongo_port, broker_url)
+    dummy_object = DummyObject(building, floor, room, object_type, object_name, mongo_host, mongo_port, broker_url)
 
     ### Test some fonctionnalities
     sleep(3)
     print("\nTest 1")
     # Test the functionnality to change a configuration parameter
-    print("Publishing mode:", dummy_object.get_parameter("publishing_mode"))
-    dummy_object.set_parameter("publishing_mode", "on-demand")
-    print("Publishing mode:", dummy_object.get_parameter("publishing_mode"))
+    print("Publishing mode:", dummy_object.get_parameter_value("publishing_mode"))
+    dummy_object.set_parameter_value("publishing_mode", "on-demand")
+    print("Publishing mode:", dummy_object.get_parameter_value("publishing_mode"))
 
     sleep(1)
     print("\nTest 2")
     # Test the functionnality to add metrics on the fly
-    print("Metrics list :", dummy_object.get_metrics_list())
-    dummy_object.add_metrics_field(
+    print("Metrics list :", dummy_object.get_fields_list())
+    dummy_object.add_field(
         "new_metrics_name",
         "new_metrics_label",
         "new_metrics_description",
         "new_metrics_type"
     )
-    print("Metrics list :", dummy_object.get_metrics_list())
+    print("Metrics list :", dummy_object.get_fields_list())
 
-    # Publish MQTT messages forever
+    # Publish and process MQTT messages forever
     dummy_object.loop_forever()
