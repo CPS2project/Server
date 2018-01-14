@@ -62,7 +62,7 @@ if __name__ == '__main__':
         print("Floor: 1")
         print("Room: 1.32")
         print("Object type: systemData Publisher")
-        print("Object name: Computer 01")
+        print("Object name: Computer")
         print("MongoDB host: localhost")
         print("MongoDB port: 27017")
         print("Broker url: localhost")
@@ -70,7 +70,7 @@ if __name__ == '__main__':
         floor = "1"
         room = "1.32"
         object_type = "systemData Publisher"
-        object_name = "Computer 01"
+        object_name = "Computer"
         mongo_host = "localhost"
         mongo_port = 27017
         broker_url = "localhost"

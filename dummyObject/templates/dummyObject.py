@@ -144,7 +144,7 @@ class DummyObject:
 
         # Persist the object description in MongoDB
         print("Connecting to MongoDB.")
-        self.mongo_client = MongoClient(mongodb_host, mongodb_port)
+        self.mongo_client = MongoClient("mongodb://jsulpis:W1vqSPqC2G1ZnqCb@mycluster-shard-00-00-w13lj.mongodb.net:27017,mycluster-shard-00-01-w13lj.mongodb.net:27017,mycluster-shard-00-02-w13lj.mongodb.net:27017/?replicaSet=MyCluster-shard-0&ssl=true")
         print("Persisting the object description in the collection \"objects\" of the database "
               "\"cps2_project\" in MongoDB.")
         self.mongo_id = self.mongo_client\
@@ -277,6 +277,7 @@ class DummyObject:
     def set_field_value(self, field_name, new_value):
         """ change the value of a field """
         self.fields[field_name] = new_value
+        print(field_name + " is now " + new_value + ".")
 
     def add_field(self, field_name, label, description, type, function=None):
         """ add a field in the description of the object.

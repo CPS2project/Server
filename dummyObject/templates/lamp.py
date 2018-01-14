@@ -27,12 +27,19 @@ class Lamp(DummyObject):
             description="The status of the lamp (ON/OFF)",
             type="String",
         )
+        self.add_field(
+            field_name="brightness",
+            label="brightness",
+            description="The brightness of the lamp (0-255)",
+            type="Integer",
+        )
 
         # Change the publishing mode to on-demand (it is useless to publish the state of the lamp continuously)
         self.set_parameter_value("publishing_mode", "on-demand")
 
-        # Set a default status
+        # Set a default fields value
         self.set_field_value("status", "ON")
+        self.set_field_value("brightness", "200")
 
     def custom_mqtt_reaction(self, topic, message):
         pass
@@ -54,7 +61,7 @@ if __name__ == '__main__':
         print("Floor: 1")
         print("Room: 1.32")
         print("Object type: Lamp")
-        print("Object name: Ceiling Lamp 01")
+        print("Object name: Ceiling Lamp")
         print("MongoDB host: localhost")
         print("MongoDB port: 27017")
         print("Broker url: localhost")
@@ -62,7 +69,7 @@ if __name__ == '__main__':
         floor = "1"
         room = "1.32"
         object_type = "Lamp"
-        object_name = "Ceiling Lamp 01"
+        object_name = "Ceiling Lamp "
         mongo_host = "localhost"
         mongo_port = 27017
         broker_url = "localhost"
