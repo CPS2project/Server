@@ -144,7 +144,7 @@ class DummyObject:
 
         # Persist the object description in MongoDB
         print("Connecting to MongoDB.")
-        self.mongo_client = MongoClient("mongodb://jsulpis:W1vqSPqC2G1ZnqCb@mycluster-shard-00-00-w13lj.mongodb.net:27017,mycluster-shard-00-01-w13lj.mongodb.net:27017,mycluster-shard-00-02-w13lj.mongodb.net:27017/?replicaSet=MyCluster-shard-0&ssl=true")
+        self.mongo_client = MongoClient("192.168.43.48")
         print("Persisting the object description in the collection \"objects\" of the database "
               "\"cps2_project\" in MongoDB.")
         self.mongo_id = self.mongo_client\
@@ -175,24 +175,29 @@ class DummyObject:
             """ callback function to process mqtt messages """
             message_type = msg.topic.split("/")[-1]
             message = str(msg.payload.decode("utf-8"))
-            print("received message on topic " + msg.topic + ": " + message)
+            print("\nreceived message on topic " + msg.topic + ": " + message)
 
             # The message should contain 3 things:
-            # either parameter, new_value, client_id
-            # or <field/config>, field_name, client_id
+            # either <field/config>, parameter_name, new_value
+            # or <field/config>, parameter_name, client_id
             if len(message.split(",")) != 3:
                 print("Bad message structure")
                 return 0
 
+            # React to custom topics. Should be implemented in a concrete class depending on the behaviour to simulate.
             self.custom_mqtt_reaction(msg.topic, message)
 
-            if message_type == "config":
-                parameter_name, new_value, client_id = message.split(",")
-                if parameter_name in self.get_parameters_list():
+            # The client wants to change the value of a parameter
+            if message_type == "change":
+                request_type, parameter_name, new_value = message.split(",")
+                if request_type == "config" and parameter_name in self.get_parameters_list():
                     self.set_parameter_value(parameter_name, new_value)
+                elif request_type == "field" and parameter_name in self.get_fields_list():
+                    self.set_field_value(parameter_name, new_value)
 
+            # The client requests the value of a parameter
             elif message_type == "request":
-                    request_type, parameter, client_id = message.split(",")
+                    request_type, parameter_name, client_id = message.split(",")
 
                     # Fake latency
                     sleep(float(self.get_parameter_value("response_latency")) / 1000)
@@ -200,7 +205,7 @@ class DummyObject:
                     # ask for a configuration parameter
                     if request_type == "config":
                         print("request for a configuration parameter")
-                        if parameter in self.get_parameters_list():
+                        if parameter_name in self.get_parameters_list():
                             self.mqtt_client.publish(self.base_topic + "/answer/" + client_id,
                                                      self.get_parameter_value(parameter))
                         else:
@@ -210,9 +215,9 @@ class DummyObject:
                     # ask for a field
                     elif request_type == "field":
                         print("request for a field")
-                        if parameter in self.get_fields_list():
+                        if parameter_name in self.get_fields_list():
                             client.publish(self.base_topic + "/answer/" + client_id,
-                                           self.get_field_value(parameter))
+                                           self.get_field_value(parameter_name))
                         else:
                             self.mqtt_client.publish(self.base_topic + "/answer/" + client_id,
                                                      "no such field")
@@ -229,6 +234,7 @@ class DummyObject:
             building + "/" + floor + "/All/All/All/+",
             building + "/All/All/" + type + "/All/+",
             building + "/All/All/All/All/+",
+            "All/All/All/" + type + "/All/+",
             "All/All/All/All/All/+"
         ]
         for topic in topics:
@@ -251,6 +257,7 @@ class DummyObject:
     def set_parameter_value(self, parameter_name, new_value):
         """ change the value of a configuration parameter """
         self.description["config"]["values"][parameter_name]["value"] = new_value
+        # Update MongoDB
         self.mongo_client.cps2_project.objects.update_one(
             {"_id": self.mongo_id},
             {"$set": {"config.values." + parameter_name + ".value": new_value,
@@ -276,8 +283,12 @@ class DummyObject:
 
     def set_field_value(self, field_name, new_value):
         """ change the value of a field """
+        new_value = str(new_value)
         self.fields[field_name] = new_value
-        print(field_name + " is now " + new_value + ".")
+        # Send the new value to InfluxDB
+        self.mqtt_client.publish(self.base_topic + "/metrics/" + field_name,
+                                             self.get_field_value(field_name))
+        print("Switched the field " + field_name + " to " + new_value + " and sent the new value to InfluxDB.")
 
     def add_field(self, field_name, label, description, type, function=None):
         """ add a field in the description of the object.

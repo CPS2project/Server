@@ -39,19 +39,11 @@ class SmokeDetector(DummyObject):
         pass
 
     def set_field_value(self, field_name, new_value):
+        """ Override a parent method to make a custom behaviour """
         super().set_field_value(field_name, new_value)
         # Trigger the scenario 2 when detecting some smoke
         if field_name == "status" and new_value == "ON":
-            self.mqtt_client.publish("Scenario", "2")
-
-    def loop_forever(self):
-        """ Publish and process MQTT messages forever. 
-        Artificially switch its status after 10 seconds for testing purpose.
-        """
-        while True:
-            if time() - start > 10:
-                self.set_field_value("status", "ON")
-                exit()
+            self.mqtt_client.publish("Scenario", "3")
 
 
 if __name__ == '__main__':

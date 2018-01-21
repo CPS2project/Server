@@ -39,15 +39,19 @@ class Lamp(DummyObject):
 
         # Set a default fields value
         self.set_field_value("status", "ON")
-        self.set_field_value("brightness", "200")
+        self.set_field_value("brightness", 200)
 
     def custom_mqtt_reaction(self, topic, message):
         pass
 
-    def loop_forever(self):
-        """ Publish and process MQTT messages forever. Override parent method since this class
-         does not publish any data continuously """
-        self.mqtt_client.loop_forever()
+    def set_field_value(self, field_name, new_value):
+        """ Override a parent method to make a custom behaviour """
+        super().set_field_value(field_name, new_value)
+        # Change the brightness to be consistent with the status
+        if field_name == "status" and new_value == "OFF":
+            self.set_field_value("brightness", 0)
+        elif field_name == "status" and new_value == "ON":
+            self.set_field_value("brightness", 200)
 
 
 if __name__ == '__main__':
@@ -62,17 +66,17 @@ if __name__ == '__main__':
         print("Room: 1.32")
         print("Object type: Lamp")
         print("Object name: Ceiling Lamp")
-        print("MongoDB host: localhost")
+        print("MongoDB host: 192.168.43.48")
         print("MongoDB port: 27017")
-        print("Broker url: localhost")
+        print("Broker url: 192.168.43.48")
         building = "EF"
         floor = "1"
         room = "1.32"
         object_type = "Lamp"
-        object_name = "Ceiling Lamp "
-        mongo_host = "localhost"
+        object_name = "Ceiling Lamp"
+        mongo_host = "192.168.43.48"
         mongo_port = 27017
-        broker_url = "localhost"
+        broker_url = "192.168.43.48"
 
     else:
         print("Usage: " + __file__ + " <building> <floor> <room> <object_type> <object_name> "
