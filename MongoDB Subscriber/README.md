@@ -6,9 +6,9 @@ This program is an MQTT subscriber which serves as a gateway between the client 
 ### Features
 In the MongoDB collection "scenarios" we have a document per scenario that stores scenario_id, and a set of configs for concerned objects.
 When receiving a message on topic "Scenario" the program:
-1- retrieves the scenario from MongoDB as a JSON object
-2- parses it to get the configs array
-3- for each group of objects referred as targets in this array, it publishes the new state described in the dictionary "config" and/or "fields".
+1. retrieves the scenario from MongoDB as a JSON object
+2. parses it to get the configs array
+3. for each group of objects referred as targets in this array, it publishes the new state described in the dictionary "config" and/or "fields".
 
 ### Dependencies: 
 - paho.mqtt (`sudo pip3 install paho-mqtt`)
