@@ -207,7 +207,7 @@ class DummyObject:
                         print("request for a configuration parameter")
                         if parameter_name in self.get_parameters_list():
                             self.mqtt_client.publish(self.base_topic + "/answer/" + client_id,
-                                                     self.get_parameter_value(parameter))
+                                                     self.get_parameter_value(parameter_name))
                         else:
                             self.mqtt_client.publish(self.base_topic + "/answer/" + client_id,
                                                      "no such parameter")
@@ -234,7 +234,9 @@ class DummyObject:
             building + "/" + floor + "/All/All/All/+",
             building + "/All/All/" + type + "/All/+",
             building + "/All/All/All/All/+",
+            "All/" + floor + "All/All/All",
             "All/All/All/" + type + "/All/+",
+            "All/All/All/All/" + name + "/+",
             "All/All/All/All/All/+"
         ]
         for topic in topics:
